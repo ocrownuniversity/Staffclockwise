@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StaffClock — Attendance System</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* ============================================================
+       CSS VARIABLES & RESET
+    ============================================================ */
+    :root {
+      --bg:         #0a0c10;
+      --surface:    #111318;
+      --card:       #16191f;
+      --border:     #252830;
+      --accent:     #00e5a0;
+      --accent2:    #0077ff;
+      --danger:     #ff4757;
+      --warn:       #ffa502;
+      --text:       #e8eaf0;
+      --muted:      #6b7280;
+      --radius:     14px;
+      --shadow:     0 8px 32px rgba(0,0,0,.45);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ============================================================
+       UTILITY
+    ============================================================ */
+    .hidden { display: none !important; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 24px; border: none; border-radius: 10px;
+      font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: all .2s; letter-spacing: .3px;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary  { background: var(--accent); color: #000; }
+    .btn-primary:hover  { background: #00ffb3; box-shadow: 0 0 20px rgba(0,229,160,.35); }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-danger:hover   { background: #ff6b81; box-shadow: 0 0 20px rgba(255,71,87,.35); }
+    .btn-ghost    { background: var(--border); color: var(--text); }
+    .btn-ghost:hover    { background: #2e3240; }
+    .btn-blue     { background: var(--accent2); color: #fff; }
+    .btn-blue:hover     { background: #1a88ff; box-shadow: 0 0 20px rgba(0,119,255,.35); }
+    .btn-full     { width: 100%; }
+    .btn-lg       { padding: 16px 32px; font-size: 17px; border-radius: 12px; }
+
+    input, select {
+      width: 100%; padding: 13px 16px;
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: 10px; color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 15px;
+      outline: none; transition: border-color .2s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--muted); }
+    select option { background: var(--surface); }
+
+    label { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: .8px; }
+
+    .field { margin-bottom: 18px; }
+
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--card); border: 1.5px solid var(--border);
+      padding: 14px 24px; border-radius: 50px;
+      font-size: 14px; font-weight: 500; color: var(--text);
+      box-shadow: var(--shadow); transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+      z-index: 9999; display: flex; align-items: center; gap: 10px; white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: var(--accent); color: var(--accent); }
+    .toast.error   { border-color: var(--danger); color: var(--danger); }
+
+    /* ============================================================
+       BACKGROUND GRID
+    ============================================================ */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: -1;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: .35;
+    }
+
+    /* ============================================================
+       AUTH SCREEN
+    ============================================================ */
+    #authScreen {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+
+    .auth-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 20px; padding: 40px; width: 100%; max-width: 400px;
+      box-shadow: var(--shadow);
+      animation: slideUp .5s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .auth-logo {
+      font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
+      margin-bottom: 6px; letter-spacing: -1px;
+    }
+    .auth-logo span { color: var(--accent); }
+
+    .auth-subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .role-tabs {
+      display: flex; gap: 8px; margin-bottom: 28px;
+      background: var(--surface); border-radius: 10px; padding: 4px;
+    }
+    .role-tab {
+      flex: 1; padding: 10px; border: none; background: transparent;
+      border-radius: 8px; color: var(--muted); font-family: 'DM Sans', sans-serif;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s;
+    }
+    .role-tab.active { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+
+    /* ============================================================
+       HEADER (Employee & Admin shared)
+    ============================================================ */
+    .app-header {
+      background: var(--card); border-bottom: 1.5px solid var(--border);
+      padding: 0 24px; height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .app-logo { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+    .app-logo span { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .user-chip {
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: 50px; padding: 6px 14px;
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      display: flex; align-items: center; gap: 7px;
+    }
+    .user-chip::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+    }
+
+    /* ============================================================
+       EMPLOYEE DASHBOARD
+    ============================================================ */
+    #employeeApp { min-height: 100vh; }
+
+    .emp-body { padding: 32px 24px; max-width: 480px; margin: 0 auto; }
+
+    .greeting {
+      font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; margin-bottom: 4px;
+    }
+    .greeting-sub { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .clock-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); padding: 28px; margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .live-time {
+      font-family: 'Syne', sans-serif; font-size: 48px; font-weight: 800;
+      letter-spacing: -2px; color: var(--accent); line-height: 1;
+    }
+    .live-date { color: var(--muted); font-size: 14px; margin-top: 6px; margin-bottom: 28px; }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 18px; border-radius: 50px;
+      font-size: 13px; font-weight: 600; margin-bottom: 24px;
+    }
+    .status-badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; }
+    .status-in   { background: rgba(0,229,160,.12); color: var(--accent); border: 1px solid rgba(0,229,160,.3); }
+    .status-in::before   { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.5s infinite; }
+    .status-out  { background: rgba(107,114,128,.12); color: var(--muted); border: 1px solid rgba(107,114,128,.3); }
+    .status-out::before  { background: var(--muted); }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .clock-buttons { display: flex; gap: 12px; }
+
+    .location-card {
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .location-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+    .location-text { font-size: 14px; color: var(--text); display: flex; align-items: flex-start; gap: 8px; }
+    .location-text .icon { color: var(--accent); font-size: 18px; }
+
+    .history-section { margin-top: 28px; }
+    .section-title { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+
+    .history-item {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .hi-left { display: flex; align-items: center; gap: 10px; }
+    .hi-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .hi-dot.in  { background: var(--accent); }
+    .hi-dot.out { background: var(--danger); }
+    .hi-label { font-size: 13px; font-weight: 600; }
+    .hi-time  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .hi-badge {
+      font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 50px; text-transform: uppercase;
+    }
+    .hi-badge.in  { background: rgba(0,229,160,.12); color: var(--accent); }
+    .hi-badge.out { background: rgba(255,71,87,.12);  color: var(--danger); }
+
+    /* ============================================================
+       ADMIN DASHBOARD
+    ============================================================ */
+    #adminApp { min-height: 100vh; }
+
+    .admin-body { padding: 28px 24px; max-width: 1200px; margin: 0 auto; }
+
+    .admin-stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px; margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .stat-num  { font-family: 'Syne', sans-serif; font-size: 32px; font-weight: 800; }
+    .stat-num.green  { color: var(--accent); }
+    .stat-num.blue   { color: var(--accent2); }
+    .stat-num.red    { color: var(--danger); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-top: 4px; }
+
+    /* Admin Tabs */
+    .admin-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+    .admin-tab {
+      padding: 10px 20px; border: 1.5px solid var(--border); border-radius: 10px;
+      background: transparent; color: var(--muted);
+      font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+    }
+    .admin-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* Filters */
+    .filters-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px; margin-bottom: 20px;
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+
+    /* Table */
+    .table-wrap {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .records-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .records-table th {
+      background: var(--surface); padding: 14px 16px; text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); border-bottom: 1.5px solid var(--border);
+    }
+    .records-table td {
+      padding: 13px 16px; border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .records-table tr:last-child td { border-bottom: none; }
+    .records-table tr:hover td { background: rgba(255,255,255,.02); }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700;
+    }
+    .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+    .pill.in  { background: rgba(0,229,160,.12); color: var(--accent); }
+    .pill.in::before  { background: var(--accent); }
+    .pill.out { background: rgba(255,71,87,.12);  color: var(--danger); }
+    .pill.out::before { background: var(--danger); }
+
+    .no-data { text-align: center; padding: 48px 24px; color: var(--muted); }
+    .no-data-icon { font-size: 40px; margin-bottom: 12px; }
+
+    /* Map */
+    #mapContainer {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; height: 520px;
+    }
+    #map { width: 100%; height: 100%; }
+    .map-placeholder {
+      height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; color: var(--muted); gap: 12px;
+    }
+    .map-placeholder .icon { font-size: 48px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .live-time { font-size: 36px; }
+      .clock-buttons { flex-direction: column; }
+      .admin-stats { grid-template-columns: 1fr 1fr; }
+      .records-table { font-size: 12px; }
+      .records-table th, .records-table td { padding: 10px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================
+     TOAST NOTIFICATION
+============================================================ -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     AUTH SCREEN
+============================================================ -->
+<div id="authScreen">
+  <div class="auth-card">
+    <div class="auth-logo">Staff<span>Clock</span></div>
+    <div class="auth-subtitle">Attendance Management System</div>
+
+    <!-- Role Tabs -->
+    <div class="role-tabs">
+      <button class="role-tab active" id="tabEmployee" onclick="switchRole('employee')">Employee</button>
+      <button class="role-tab" id="tabAdmin"    onclick="switchRole('admin')">Admin</button>
+    </div>
+
+    <!-- Login Form -->
+    <div class="field">
+      <label>Email Address</label>
+      <input type="email" id="loginEmail" placeholder="you@company.com"/>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="loginPassword" placeholder="Enter password"/>
+    </div>
+    <button class="btn btn-primary btn-full btn-lg" onclick="handleLogin()" id="loginBtn">
+      Sign In
+    </button>
+
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:20px;">
+      Contact your administrator to get login credentials.
+    </p>
+  </div>
+</div>
+
+<!-- ============================================================
+     EMPLOYEE APP
+============================================================ -->
+<div id="employeeApp" class="hidden">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="app-logo">Staff<span>Clock</span></div>
+    <div class="header-right">
+      <div class="user-chip" id="empUserChip">Employee</div>
+      <button class="btn btn-ghost" onclick="handleLogout()" style="padding:8px 14px;font-size:13px;">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div class="emp-body">
+    <div class="greeting" id="empGreeting">Good Morning 👋</div>
+    <div class="greeting-sub" id="empSubtitle">Tap Clock In when you arrive.</div>
+
+    <!-- Clock Card -->
+    <div class="clock-card">
+      <div class="live-time" id="liveTime">00:00:00</div>
+      <div class="live-date" id="liveDate">—</div>
+
+      <!-- Status -->
+      <div class="status-badge status-out" id="empStatus">● Clocked Out</div>
+
+      <!-- Buttons -->
+      <div class="clock-buttons">
+        <button class="btn btn-primary btn-full btn-lg" id="btnClockIn" onclick="clockAction('IN')">
+          ⏱ Clock In
+        </button>
+        <button class="btn btn-danger btn-full btn-lg hidden" id="btnClockOut" onclick="clockAction('OUT')">
+          ✋ Clock Out
+        </button>
+      </div>
+    </div>
+
+    <!-- Location Card -->
+    <div class="location-card">
+      <div class="location-label">📍 GPS Location</div>
+      <div class="location-text" id="locationText">
+        <span>Fetching your location…</span>
+      </div>
+    </div>
+
+    <!-- Recent History -->
+    <div class="history-section">
+      <div class="section-title">Recent Activity</div>
+      <div id="empHistory"><div class="no-data"><div class="no-data-icon">📋</div>No records yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     ADMIN APP
+============================================================ -->
+<div id="adminApp" class="hidden">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="app-logo">Staff<span>Clock</span> <span style="font-size:12px;color:var(--muted);font-family:'DM Sans';font-weight:500;">Admin</span></div>
+    <div class="header-right">
+      <div class="user-chip" id="adminUserChip">Admin</div>
+      <button class="btn btn-ghost" onclick="handleLogout()" style="padding:8px 14px;font-size:13px;">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="admin-body">
+    <!-- Stats Row -->
+    <div class="admin-stats">
+      <div class="stat-card">
+        <div class="stat-num green" id="statTotal">0</div>
+        <div class="stat-label">Total Records</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num blue" id="statIn">0</div>
+        <div class="stat-label">Clocked In Today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num red" id="statOut">0</div>
+        <div class="stat-label">Clocked Out Today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="statStaff">0</div>
+        <div class="stat-label">Unique Staff</div>
+      </div>
+    </div>
+
+    <!-- Admin Tabs -->
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="showAdminTab('records')">📋 Records</button>
+      <button class="admin-tab" onclick="showAdminTab('map')">🗺 Map View</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-row">
+      <div class="field" style="margin:0">
+        <label>Search Name / ID</label>
+        <input type="text" id="filterSearch" placeholder="Type to search…" oninput="applyFilters()"/>
+      </div>
+      <div class="field" style="margin:0">
+        <label>Filter by Date</label>
+        <input type="date" id="filterDate" oninput="applyFilters()"/>
+      </div>
+      <div class="field" style="margin:0">
+        <label>Status</label>
+        <select id="filterStatus" onchange="applyFilters()">
+          <option value="">All</option>
+          <option value="IN">Clock In</option>
+          <option value="OUT">Clock Out</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;display:flex;align-items:flex-end;">
+        <button class="btn btn-ghost btn-full" onclick="clearFilters()">Clear Filters</button>
+      </div>
+    </div>
+
+    <!-- RECORDS TAB -->
+    <div id="tabRecords">
+      <div class="table-wrap">
+        <div style="overflow-x:auto;">
+          <table class="records-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Employee ID</th>
+                <th>Timestamp</th>
+                <th>Status</th>
+                <th>GPS</th>
+              </tr>
+            </thead>
+            <tbody id="recordsBody">
+              <tr><td colspan="6" class="no-data"><div class="no-data-icon">📋</div>Loading records…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAP TAB -->
+    <div id="tabMap" class="hidden">
+      <div id="mapContainer">
+        <div class="map-placeholder" id="mapPlaceholder">
+          <div class="icon">🗺</div>
+          <strong>Google Maps</strong>
+          <span style="font-size:13px;">Add your Google Maps API key to enable map view.</span>
+          <span style="font-size:12px;color:var(--muted);">See setup instructions below.</span>
+        </div>
+        <div id="map"></div>
+      </div>
+    </div>
+
+  </div><!-- /admin-body -->
+</div><!-- /adminApp -->
+
+
+<!-- ============================================================
+     JAVASCRIPT
+============================================================ -->
+<script>
+/* ============================================================
+   FIREBASE CONFIG — Replace with your own if needed
+============================================================ */
+const firebaseConfig = {
+  apiKey:            "AIzaSyAYXG-6gFJ_QMZT__7A32Kogx4uVBMR1hc",
+  authDomain:        "eduportal-dc55b.firebaseapp.com",
+  databaseURL:       "https://eduportal-dc55b-default-rtdb.firebaseio.com",
+  projectId:         "eduportal-dc55b",
+  storageBucket:     "eduportal-dc55b.firebasestorage.app",
+  messagingSenderId: "168703430994",
+  appId:             "1:168703430994:web:bad5baccd088d6ea9faa8b"
+};
+
+/* ============================================================
+   GOOGLE MAPS API KEY — Add yours here
+   Get from: https://console.cloud.google.com → Maps JavaScript API
+============================================================ */
+const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY";
+
+/* ============================================================
+   ADMIN EMAIL — Accounts with this email are treated as admins.
+   You can expand this list for multiple admins.
+============================================================ */
+const ADMIN_EMAILS = ["admin@company.com"]; // ← Change this
+
+/* ============================================================
+   INIT
+============================================================ */
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+let currentUser     = null;
+let userRole        = 'employee';   // 'employee' | 'admin'
+let currentLocation = null;         // { lat, lng }
+let allRecords      = [];           // Cache for admin table
+let googleMap       = null;
+let mapMarkers      = [];
+let isClockedIn     = false;
+let selectedRole    = 'employee';   // Role chosen on login screen
+
+/* ============================================================
+   AUTH LISTENER
+============================================================ */
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    currentUser = user;
+    userRole = ADMIN_EMAILS.includes(user.email) ? 'admin' : 'employee';
+    document.getElementById('authScreen').classList.add('hidden');
+
+    if (userRole === 'admin') {
+      showAdminDashboard();
+    } else {
+      showEmployeeDashboard();
+    }
+  } else {
+    currentUser = null;
+    document.getElementById('authScreen').classList.remove('hidden');
+    document.getElementById('employeeApp').classList.add('hidden');
+    document.getElementById('adminApp').classList.add('hidden');
+  }
+});
+
+/* ============================================================
+   ROLE SWITCH ON LOGIN SCREEN
+============================================================ */
+function switchRole(role) {
+  selectedRole = role;
+  document.getElementById('tabEmployee').classList.toggle('active', role === 'employee');
+  document.getElementById('tabAdmin').classList.toggle('active', role === 'admin');
+}
+
+/* ============================================================
+   LOGIN
+============================================================ */
+async function handleLogin() {
+  const email    = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn      = document.getElementById('loginBtn');
+
+  if (!email || !password) { showToast('Please enter email and password.', 'error'); return; }
+
+  btn.textContent = 'Signing in…';
+  btn.disabled = true;
+
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+    showToast('Welcome back!', 'success');
+  } catch (e) {
+    showToast(friendlyError(e.code), 'error');
+    btn.textContent = 'Sign In';
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   LOGOUT
+============================================================ */
+async function handleLogout() {
+  await auth.signOut();
+  showToast('Signed out.', 'success');
+}
+
+function friendlyError(code) {
+  const map = {
+    'auth/user-not-found':     'No account with this email.',
+    'auth/wrong-password':     'Incorrect password.',
+    'auth/invalid-email':      'Invalid email address.',
+    'auth/too-many-requests':  'Too many attempts. Try again later.',
+  };
+  return map[code] || 'Login failed. Please try again.';
+}
+
+/* ============================================================
+   EMPLOYEE DASHBOARD
+============================================================ */
+function showEmployeeDashboard() {
+  document.getElementById('employeeApp').classList.remove('hidden');
+  document.getElementById('adminApp').classList.add('hidden');
+
+  // Greet
+  const name = currentUser.displayName || currentUser.email.split('@')[0];
+  const hr   = new Date().getHours();
+  const greet = hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening';
+  document.getElementById('empGreeting').textContent = `${greet}, ${capitalise(name)} 👋`;
+  document.getElementById('empUserChip').textContent = capitalise(name);
+
+  // Start clock
+  startLiveClock();
+
+  // Get GPS
+  getLocation();
+
+  // Check if already clocked in
+  checkClockStatus();
+
+  // Load recent history
+  loadEmpHistory();
+}
+
+function startLiveClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('liveTime').textContent = now.toLocaleTimeString('en-NG', { hour12: false });
+    document.getElementById('liveDate').textContent = now.toLocaleDateString('en-NG', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+function getLocation() {
+  const el = document.getElementById('locationText');
+  if (!navigator.geolocation) {
+    el.innerHTML = '<span>GPS not available on this device.</span>';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      el.innerHTML = `<span>📍 ${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}</span>
+                      <span style="font-size:12px;color:var(--muted);margin-top:4px;display:block;">Accuracy: ±${Math.round(pos.coords.accuracy)}m</span>`;
+    },
+    (err) => {
+      el.innerHTML = `<span style="color:var(--warn)">⚠ Location access denied. Enable GPS for accurate records.</span>`;
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+/* Check if user clocked in today but not yet out */
+async function checkClockStatus() {
+  const today = todayStr();
+  const snap  = await db.collection('clock_ins')
+    .where('employeeEmail', '==', currentUser.email)
+    .orderBy('timestamp', 'desc')
+    .limit(1)
+    .get();
+
+  if (!snap.empty) {
+    const last = snap.docs[0].data();
+    const recDate = last.timestamp.toDate().toISOString().split('T')[0];
+    if (last.status === 'IN' && recDate === today) {
+      setClockedIn(true);
+    } else {
+      setClockedIn(false);
+    }
+  }
+}
+
+function setClockedIn(state) {
+  isClockedIn = state;
+  const badge = document.getElementById('empStatus');
+  const btnIn  = document.getElementById('btnClockIn');
+  const btnOut = document.getElementById('btnClockOut');
+
+  if (state) {
+    badge.textContent  = '● Clocked In';
+    badge.className    = 'status-badge status-in';
+    btnIn.classList.add('hidden');
+    btnOut.classList.remove('hidden');
+  } else {
+    badge.textContent  = '● Clocked Out';
+    badge.className    = 'status-badge status-out';
+    btnIn.classList.remove('hidden');
+    btnOut.classList.add('hidden');
+  }
+}
+
+/* ============================================================
+   CLOCK IN / CLOCK OUT ACTION
+============================================================ */
+async function clockAction(status) {
+  if (!currentLocation) {
+    // Try fetching location first
+    showToast('Fetching GPS location… try again in a moment.', 'error');
+    getLocation();
+    return;
+  }
+
+  const btn = status === 'IN' ? document.getElementById('btnClockIn') : document.getElementById('btnClockOut');
+  btn.disabled = true;
+  btn.textContent = 'Recording…';
+
+  try {
+    // Get employee info from 'staff' collection (optional), fallback to auth profile
+    const name = currentUser.displayName || currentUser.email.split('@')[0];
+
+    // Try to get employeeID from staff collection
+    let employeeID = currentUser.uid.slice(0, 8).toUpperCase();
+    try {
+      const staffDoc = await db.collection('staff').doc(currentUser.uid).get();
+      if (staffDoc.exists) {
+        const data = staffDoc.data();
+        if (data.employeeID)  employeeID = data.employeeID;
+      }
+    } catch (_) {}
+
+    // Write clock_ins record
+    await db.collection('clock_ins').add({
+      employeeName:  capitalise(name),
+      employeeID:    employeeID,
+      employeeEmail: currentUser.email,
+      timestamp:     firebase.firestore.FieldValue.serverTimestamp(),
+      location:      { lat: currentLocation.lat, lng: currentLocation.lng },
+      status:        status
+    });
+
+    setClockedIn(status === 'IN');
+    showToast(status === 'IN' ? '✅ Clocked in successfully!' : '✅ Clocked out successfully!', 'success');
+    loadEmpHistory();
+
+  } catch (e) {
+    console.error(e);
+    showToast('Error recording. Check Firestore rules.', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = status === 'IN' ? '⏱ Clock In' : '✋ Clock Out';
+}
+
+/* ============================================================
+   EMPLOYEE RECENT HISTORY
+============================================================ */
+async function loadEmpHistory() {
+  const container = document.getElementById('empHistory');
+  try {
+    const snap = await db.collection('clock_ins')
+      .where('employeeEmail', '==', currentUser.email)
+      .orderBy('timestamp', 'desc')
+      .limit(10)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<div class="no-data"><div class="no-data-icon">📋</div>No records yet.</div>';
+      return;
+    }
+
+    container.innerHTML = snap.docs.map(doc => {
+      const d   = doc.data();
+      const ts  = d.timestamp ? d.timestamp.toDate() : new Date();
+      const cls = d.status === 'IN' ? 'in' : 'out';
+      return `
+        <div class="history-item">
+          <div class="hi-left">
+            <div class="hi-dot ${cls}"></div>
+            <div>
+              <div class="hi-label">${d.status === 'IN' ? 'Clocked In' : 'Clocked Out'}</div>
+              <div class="hi-time">${ts.toLocaleString('en-NG')}</div>
+            </div>
+          </div>
+          <div class="hi-badge ${cls}">${d.status}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div class="no-data">Could not load history.</div>';
+  }
+}
+
+/* ============================================================
+   ADMIN DASHBOARD
+============================================================ */
+function showAdminDashboard() {
+  document.getElementById('adminApp').classList.remove('hidden');
+  document.getElementById('employeeApp').classList.add('hidden');
+
+  const name = currentUser.displayName || currentUser.email.split('@')[0];
+  document.getElementById('adminUserChip').textContent = capitalise(name);
+
+  loadAdminRecords();
+}
+
+/* Real-time listener for admin records */
+function loadAdminRecords() {
+  db.collection('clock_ins')
+    .orderBy('timestamp', 'desc')
+    .onSnapshot((snap) => {
+      allRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      updateStats();
+      applyFilters();
+    }, (err) => {
+      console.error(err);
+      document.getElementById('recordsBody').innerHTML =
+        `<tr><td colspan="6" class="no-data">Error: ${err.message}</td></tr>`;
+    });
+}
+
+function updateStats() {
+  const today  = todayStr();
+  const todayRecs = allRecords.filter(r => {
+    const ts = r.timestamp ? r.timestamp.toDate() : new Date(0);
+    return ts.toISOString().split('T')[0] === today;
+  });
+
+  document.getElementById('statTotal').textContent = allRecords.length;
+  document.getElementById('statIn').textContent    = todayRecs.filter(r => r.status === 'IN').length;
+  document.getElementById('statOut').textContent   = todayRecs.filter(r => r.status === 'OUT').length;
+
+  const unique = new Set(allRecords.map(r => r.employeeEmail)).size;
+  document.getElementById('statStaff').textContent = unique;
+}
+
+function applyFilters() {
+  const search = document.getElementById('filterSearch').value.toLowerCase();
+  const date   = document.getElementById('filterDate').value;  // YYYY-MM-DD
+  const status = document.getElementById('filterStatus').value;
+
+  let filtered = allRecords.filter(r => {
+    const ts    = r.timestamp ? r.timestamp.toDate() : new Date(0);
+    const tsStr = ts.toISOString().split('T')[0];
+
+    const matchSearch = !search ||
+      (r.employeeName || '').toLowerCase().includes(search) ||
+      (r.employeeID   || '').toLowerCase().includes(search);
+    const matchDate   = !date   || tsStr === date;
+    const matchStatus = !status || r.status === status;
+
+    return matchSearch && matchDate && matchStatus;
+  });
+
+  renderTable(filtered);
+}
+
+function renderTable(records) {
+  const tbody = document.getElementById('recordsBody');
+
+  if (!records.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="no-data"><div class="no-data-icon">🔍</div>No records found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = records.map((r, i) => {
+    const ts  = r.timestamp ? r.timestamp.toDate() : new Date();
+    const cls = r.status === 'IN' ? 'in' : 'out';
+    const gps = r.location ? `${r.location.lat.toFixed(4)}, ${r.location.lng.toFixed(4)}` : '—';
+    return `
+      <tr>
+        <td style="color:var(--muted);font-size:12px;">${i + 1}</td>
+        <td style="font-weight:600;">${r.employeeName || '—'}</td>
+        <td style="font-family:monospace;font-size:12px;color:var(--accent2);">${r.employeeID || '—'}</td>
+        <td style="font-size:13px;color:var(--muted);">${ts.toLocaleString('en-NG')}</td>
+        <td><span class="pill ${cls}">${r.status}</span></td>
+        <td style="font-size:12px;color:var(--muted);">${gps}</td>
+      </tr>`;
+  }).join('');
+}
+
+function clearFilters() {
+  document.getElementById('filterSearch').value = '';
+  document.getElementById('filterDate').value   = '';
+  document.getElementById('filterStatus').value = '';
+  applyFilters();
+}
+
+/* ============================================================
+   ADMIN TABS
+============================================================ */
+function showAdminTab(tab) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+
+  document.getElementById('tabRecords').classList.toggle('hidden', tab !== 'records');
+  document.getElementById('tabMap').classList.toggle('hidden', tab !== 'map');
+
+  if (tab === 'map') initMap();
+}
+
+/* ============================================================
+   GOOGLE MAPS
+============================================================ */
+function initMap() {
+  if (GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY') {
+    document.getElementById('mapPlaceholder').classList.remove('hidden');
+    document.getElementById('map').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('mapPlaceholder').classList.add('hidden');
+  document.getElementById('map').classList.remove('hidden');
+
+  // Load Google Maps script dynamically (once)
+  if (!window.google) {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=renderMap`;
+    script.async = true;
+    document.head.appendChild(script);
+  } else {
+    renderMap();
+  }
+}
+
+window.renderMap = function () {
+  if (googleMap) {
+    // Already initialised — just refresh markers
+    refreshMapMarkers();
+    return;
+  }
+
+  googleMap = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: 7.3775, lng: 3.9470 },  // Default: Ibadan, Nigeria
+    zoom: 12,
+    styles: darkMapStyle()
+  });
+
+  refreshMapMarkers();
+};
+
+function refreshMapMarkers() {
+  if (!googleMap) return;
+
+  // Clear existing markers
+  mapMarkers.forEach(m => m.setMap(null));
+  mapMarkers = [];
+
+  const records = allRecords.filter(r => r.location);
+  if (!records.length) return;
+
+  const bounds = new google.maps.LatLngBounds();
+
+  records.forEach(r => {
+    const pos   = { lat: r.location.lat, lng: r.location.lng };
+    const color = r.status === 'IN' ? '#00e5a0' : '#ff4757';
+    const ts    = r.timestamp ? r.timestamp.toDate().toLocaleString('en-NG') : '—';
+
+    const marker = new google.maps.Marker({
+      position: pos,
+      map: googleMap,
+      title: r.employeeName,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 10,
+        fillColor: color,
+        fillOpacity: .9,
+        strokeColor: '#fff',
+        strokeWeight: 2
+      }
+    });
+
+    const info = new google.maps.InfoWindow({
+      content: `
+        <div style="font-family:'DM Sans',sans-serif;padding:4px 6px;">
+          <strong>${r.employeeName}</strong> (${r.employeeID})<br/>
+          <span style="color:${color}">${r.status}</span> — ${ts}
+        </div>`
+    });
+    marker.addListener('click', () => info.open(googleMap, marker));
+
+    mapMarkers.push(marker);
+    bounds.extend(pos);
+  });
+
+  googleMap.fitBounds(bounds);
+}
+
+function darkMapStyle() {
+  return [
+    { elementType:'geometry', stylers:[{color:'#0a0c10'}] },
+    { elementType:'labels.text.fill', stylers:[{color:'#6b7280'}] },
+    { elementType:'labels.text.stroke', stylers:[{color:'#0a0c10'}] },
+    { featureType:'road', elementType:'geometry', stylers:[{color:'#1c2028'}] },
+    { featureType:'road', elementType:'geometry.stroke', stylers:[{color:'#252830'}] },
+    { featureType:'water', elementType:'geometry', stylers:[{color:'#111318'}] },
+    { featureType:'poi', stylers:[{visibility:'off'}] }
+  ];
+}
+
+/* ============================================================
+   UTILITIES
+============================================================ */
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function capitalise(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = `toast ${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+/* Enter key on login */
+document.getElementById('loginPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleLogin();
+});
+</script>
+
+</body>
+</html>
